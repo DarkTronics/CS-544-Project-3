@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "rootDir": "src/",
+    "outDir": "./dist",
+    "allowJs": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "lib": [
+      "esnext",
+    ],
+    "baseUrl": ".",
+    "target": "esnext",
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "pretty": false,
+    "noImplicitAny": true,
+    "declaration": true,
+    "declarationMap": true,
+    "strict": true,
+    "strictNullChecks": false,
+  },
+  "include": [
+    "./src/"
+  ]
+}
