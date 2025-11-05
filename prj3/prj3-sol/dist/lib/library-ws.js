@@ -2,7 +2,7 @@ import cors from 'cors';
 import Express from 'express';
 import STATUS from 'http-status';
 import { Errors } from 'cs544-js-utils';
-import { DEFAULT_COUNT } from './params.js';
+import { DEFAULT_INDEX, DEFAULT_COUNT } from './params.js';
 export function serve(model, options = {}) {
     const app = Express();
     app.locals.model = model;
@@ -21,12 +21,69 @@ function setupRoutes(app) {
     //if uncommented, all requests are traced on the console
     //app.use(doTrace(app));
     //set up application routes
-    //TODO: set up application routes
+    app.put(`${base}/books`, doAddBook(app));
+    app.get(`${base}/books/:isbn`, doGetBook(app));
+    app.get(`${base}/books`, doFindBooks(app));
     //must be last
     app.use(do404(app)); //custom handler for page not found
     app.use(doErrors(app)); //custom handler for internal errors
 }
 //TODO: set up route handlers
+function doAddBook(app) {
+    return (async function (req, res) {
+        try {
+            const result = await app.locals.model.addBook(req.body);
+            if (!result.isOk)
+                throw result;
+            const book = result.val;
+            const { isbn } = book;
+            res.location(selfHref(req, isbn));
+            const response = selfResult(req, book, STATUS.CREATED);
+            res.status(STATUS.CREATED).json(response);
+        }
+        catch (err) {
+            const mapped = mapResultErrors(err);
+            res.status(mapped.status).json(mapped);
+        }
+    });
+}
+function doGetBook(app) {
+    return (async function (req, res) {
+        try {
+            const { isbn } = req.params;
+            const result = await app.locals.model.getBook(isbn);
+            if (!result.isOk)
+                throw result;
+            const response = selfResult(req, result.val);
+            res.json(response);
+        }
+        catch (err) {
+            const mapped = mapResultErrors(err);
+            res.status(mapped.status).json(mapped);
+        }
+    });
+}
+function doFindBooks(app) {
+    return (async function (req, res) {
+        try {
+            const q = { ...req.query };
+            const index = Number(q.index ?? DEFAULT_INDEX);
+            const count = Number(q.count ?? DEFAULT_COUNT);
+            //by requesting one extra result, we ensure that we generate the
+            //next link only if there are more than count remaining results
+            const q1 = { ...q, count: count + 1, index, };
+            const result = await app.locals.model.findBooks(q1);
+            if (!result.isOk)
+                throw result;
+            const response = pagedResult(req, 'isbn', result.val);
+            res.json(response);
+        }
+        catch (err) {
+            const mapped = mapResultErrors(err);
+            res.status(mapped.status).json(mapped);
+        }
+    });
+}
 /** log request on stdout */
 function doTrace(app) {
     return (async function (req, res, next) {
@@ -96,7 +153,8 @@ function pageLink(req, nResults, dir) {
 /** Return a success envelope for a single result. */
 function selfResult(req, result, status = STATUS.OK) {
     const method = req.method;
-    return { isOk: true,
+    return {
+        isOk: true,
         status,
         links: { self: { rel: 'self', href: selfHref(req), method } },
         result,
@@ -110,8 +168,12 @@ function pagedResult(req, idKey, results) {
     const nResults = results.length;
     const result = //(T & {links: { self: string } })[]  =
      results.map(r => {
-        const selfLinks = { self: { rel: 'self', href: selfHref(req, r[idKey]),
-                method: 'GET' } };
+        const selfLinks = {
+            self: {
+                rel: 'self', href: selfHref(req, r[idKey]),
+                method: 'GET'
+            }
+        };
         return { result: r, links: selfLinks };
     });
     const links = { self: { rel: 'self', href: selfHref(req), method: 'GET' } };
@@ -122,8 +184,10 @@ function pagedResult(req, idKey, results) {
     if (prev)
         links.prev = { rel: 'prev', href: prev, method: 'GET', };
     const count = req.query.count ? Number(req.query.count) : DEFAULT_COUNT;
-    return { isOk: true, status: STATUS.OK, links,
-        result: result.slice(0, count), };
+    return {
+        isOk: true, status: STATUS.OK, links,
+        result: result.slice(0, count),
+    };
 }
 /*************************** Mapping Errors ****************************/
 //map from domain errors to HTTP status codes.  If not mentioned in

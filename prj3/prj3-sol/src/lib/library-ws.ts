@@ -8,12 +8,14 @@ import { Lib, LendingLibrary, } from 'lending-library';
 import { Errors } from 'cs544-js-utils';
 import { DEFAULT_INDEX, DEFAULT_COUNT } from './params.js';
 
-import { Link, SelfLinks, NavLinks,
-	 SuccessEnvelope, PagedEnvelope, ErrorEnvelope }
+import {
+  Link, SelfLinks, NavLinks,
+  SuccessEnvelope, PagedEnvelope, ErrorEnvelope
+}
   from './response-envelopes.js';
 
 type RequestWithQuery = Express.Request
-  & { query: { [_: string]: string|string[]|number } };
+  & { query: { [_: string]: string | string[] | number } };
 
 export type App = Express.Application;
 
@@ -26,12 +28,11 @@ type SERVER_OPTIONS = {
   base?: string,
 };
 
-export function serve(model: LendingLibrary, options: SERVER_OPTIONS={})
-  : ServeRet
-{
+export function serve(model: LendingLibrary, options: SERVER_OPTIONS = {})
+  : ServeRet {
   const app = Express();
   app.locals.model = model;
-  const { base = '/api',  } = options;
+  const { base = '/api', } = options;
   app.locals.base = base;
   setupRoutes(app);
   const close = () => app.locals.sessions.close();
@@ -50,9 +51,11 @@ function setupRoutes(app: Express.Application) {
 
   //if uncommented, all requests are traced on the console
   //app.use(doTrace(app));
-  
+
   //set up application routes
-  //TODO: set up application routes
+  app.put(`${base}/books`, doAddBook(app));
+  app.get(`${base}/books/:isbn`, doGetBook(app));
+  app.get(`${base}/books`, doFindBooks(app));
 
   //must be last
   app.use(do404(app));  //custom handler for page not found
@@ -61,11 +64,68 @@ function setupRoutes(app: Express.Application) {
 
 //TODO: set up route handlers
 
+function doAddBook(app: Express.Application) {
+  return (async function (req: Express.Request, res: Express.Response) {
+    try {
+      const result = await app.locals.model.addBook(req.body);
+      if (!result.isOk) throw result;
+      const book = result.val;
+      const { isbn } = book;
+      res.location(selfHref(req, isbn));
+      const response =
+        selfResult<Lib.XBook>(req, book, STATUS.CREATED);
+      res.status(STATUS.CREATED).json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
+
+function doGetBook(app: Express.Application) {
+  return (async function (req: Express.Request, res: Express.Response) {
+    try {
+      const { isbn } = req.params;
+      const result = await app.locals.model.getBook(isbn);
+      if (!result.isOk) throw result;
+      const response = selfResult<Lib.XBook>(req, result.val);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
+
+function doFindBooks(app: Express.Application) {
+  return (async function (req: RequestWithQuery, res: Express.Response) {
+    try {
+      const q = { ...req.query };
+      const index = Number(q.index ?? DEFAULT_INDEX);
+      const count = Number(q.count ?? DEFAULT_COUNT);
+
+      //by requesting one extra result, we ensure that we generate the
+      //next link only if there are more than count remaining results
+      const q1 = { ...q, count: count + 1, index, };
+
+      const result = await app.locals.model.findBooks(q1);
+      if (!result.isOk) throw result;
+      const response = pagedResult<Lib.XBook>(req, 'isbn', result.val);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
 
 /** log request on stdout */
 function doTrace(app: Express.Application) {
-  return (async function(req: Express.Request, res: Express.Response, 
-			 next: Express.NextFunction) {
+  return (async function (req: Express.Request, res: Express.Response,
+    next: Express.NextFunction) {
     console.log(req.method, req.originalUrl, req.body ?? {});
     next();
   });
@@ -75,11 +135,11 @@ function doTrace(app: Express.Application) {
  *  and path.
  */
 function do404(app: Express.Application) {
-  return async function(req: Express.Request, res: Express.Response) {
+  return async function (req: Express.Request, res: Express.Response) {
     const message = `${req.method} not supported for ${req.originalUrl}`;
     const result = {
       status: STATUS.NOT_FOUND,
-      errors: [	{ options: { code: 'NOT_FOUND' }, message, }, ],
+      errors: [{ options: { code: 'NOT_FOUND' }, message, },],
     };
     res.status(404).json(result);
   };
@@ -87,17 +147,17 @@ function do404(app: Express.Application) {
 
 /** Ensures a server error results in nice JSON sent back to client
  *  with details logged on console.
- */ 
+ */
 function doErrors(app: Express.Application) {
-  return async function(err: Error, req: Express.Request, res: Express.Response,
-			next: Express.NextFunction) {
+  return async function (err: Error, req: Express.Request, res: Express.Response,
+    next: Express.NextFunction) {
     const message = err.message ?? err.toString();
     const [status, code] = (err instanceof SyntaxError)
-      ? [STATUS.BAD_REQUEST, 'SYNTAX' ]
+      ? [STATUS.BAD_REQUEST, 'SYNTAX']
       : [STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL'];
     const result = {
       status: STATUS[status],
-      errors: [ { options: { code }, message } ],
+      errors: [{ options: { code }, message }],
     };
     res.status(status).json(result);
     if (status === STATUS.INTERNAL_SERVER_ERROR) console.error(result.errors);
@@ -126,7 +186,7 @@ function selfHref(req: Express.Request, id: string = '') {
  *  is no such link.  Note that no next link is produced if
  *  nResults <= req.query.count.
  */
-function pageLink(req: Express.Request, nResults: number, dir: 1|-1) {
+function pageLink(req: Express.Request, nResults: number, dir: 1 | -1) {
   const url = new URL(requestUrl(req));
   const count = Number(req.query?.count ?? DEFAULT_COUNT);
   const index0 = Number(url.searchParams.get('index') ?? 0);
@@ -139,15 +199,15 @@ function pageLink(req: Express.Request, nResults: number, dir: 1|-1) {
 
 /** Return a success envelope for a single result. */
 function selfResult<T>(req: Express.Request, result: T,
-		       status: number = STATUS.OK)
-  : SuccessEnvelope<T>
-{
+  status: number = STATUS.OK)
+  : SuccessEnvelope<T> {
   const method = req.method;
-  return { isOk: true,
-	   status,
-	   links: { self: { rel: 'self', href: selfHref(req), method } },
-	   result,
-	 };
+  return {
+    isOk: true,
+    status,
+    links: { self: { rel: 'self', href: selfHref(req), method } },
+    result,
+  };
 }
 
 
@@ -156,15 +216,18 @@ function selfResult<T>(req: Express.Request, result: T,
  *  (this will be correct, if results[] was requested for count + 1).
  */
 function pagedResult<T>(req: Express.Request, idKey: keyof T, results: T[])
-  : PagedEnvelope<T>
-{
+  : PagedEnvelope<T> {
   const nResults = results.length;
   const result = //(T & {links: { self: string } })[]  =
     results.map(r => {
-      const selfLinks : SelfLinks =
-      { self: { rel: 'self', href: selfHref(req, r[idKey] as string),
-		method: 'GET' } };
-	return { result: r, links: selfLinks };
+      const selfLinks: SelfLinks =
+      {
+        self: {
+          rel: 'self', href: selfHref(req, r[idKey] as string),
+          method: 'GET'
+        }
+      };
+      return { result: r, links: selfLinks };
     });
   const links: NavLinks =
     { self: { rel: 'self', href: selfHref(req), method: 'GET' } };
@@ -173,10 +236,12 @@ function pagedResult<T>(req: Express.Request, idKey: keyof T, results: T[])
   const prev = pageLink(req, nResults, -1);
   if (prev) links.prev = { rel: 'prev', href: prev, method: 'GET', };
   const count = req.query.count ? Number(req.query.count) : DEFAULT_COUNT;
-  return { isOk: true, status: STATUS.OK, links,
-	   result: result.slice(0, count), };
+  return {
+    isOk: true, status: STATUS.OK, links,
+    result: result.slice(0, count),
+  };
 }
- 
+
 /*************************** Mapping Errors ****************************/
 
 //map from domain errors to HTTP status codes.  If not mentioned in
@@ -194,7 +259,7 @@ const ERROR_MAP: { [code: string]: number } = {
  *  errors, but INTERNAL_SERVER_ERROR dominates other statuses.  Returns
  *  BAD_REQUEST if no code found.
  */
-function getHttpStatus(errors: Errors.Err[]) : number {
+function getHttpStatus(errors: Errors.Err[]): number {
   let status: number = 0;
   for (const err of errors) {
     if (err instanceof Errors.Err) {
@@ -211,14 +276,14 @@ function getHttpStatus(errors: Errors.Err[]) : number {
  *  object will have a "status" property corresponding to HTTP status
  *  code.
  */
-function mapResultErrors(err: any) : ErrorEnvelope {
+function mapResultErrors(err: any): ErrorEnvelope {
   const errors = err instanceof Errors.ErrResult
     ? err.errors
-    : [ new Errors.Err(err.message ?? err.toString(), {code: 'UNKNOWN'}), ];
+    : [new Errors.Err(err.message ?? err.toString(), { code: 'UNKNOWN' }),];
   const status = getHttpStatus(errors);
-  if (status === STATUS.INTERNAL_SERVER_ERROR)  console.error(errors);
+  if (status === STATUS.INTERNAL_SERVER_ERROR) console.error(errors);
   return { isOk: false, status, errors, };
-} 
+}
 
 /**************************** CORS Options *****************************/
 
@@ -228,18 +293,18 @@ function mapResultErrors(err: any) : ErrorEnvelope {
 const CORS_OPTIONS = {
   //if localhost origin, reflect back in Access-Control-Allow-Origin res hdr
   // origin: /localhost:\d{4}/,
-  
+
   // simple reflect req origin hdr back to Access-Control-Allow-Origin res hdr
   origin: true,
 
   //methods allowed for cross-origin requests
-  methods: [ 'GET', 'PUT', ],
+  methods: ['GET', 'PUT',],
 
   //request headers allowed on cross-origin requests
   //used to allow JSON content
-  allowedHeaders: [ 'Content-Type', ],
+  allowedHeaders: ['Content-Type',],
 
   //response headers exposed to cross-origin requests
-  exposedHeaders: [  'Location', 'Content-Type', ],
+  exposedHeaders: ['Location', 'Content-Type',],
 };
 
