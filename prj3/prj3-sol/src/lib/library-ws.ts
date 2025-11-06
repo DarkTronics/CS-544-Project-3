@@ -57,12 +57,81 @@ function setupRoutes(app: Express.Application) {
   app.get(`${base}/books/:isbn`, doGetBook(app));
   app.get(`${base}/books`, doFindBooks(app));
 
+  app.delete(base, doClearBooks(app));
+
+  app.put(`${base}/lendings`, doCheckoutBook(app));
+  app.delete(`${base}/lendings`, doReturnBook(app));
+  app.get(`${base}/lendings`, doFindLendings(app));
+
   //must be last
   app.use(do404(app));  //custom handler for page not found
   app.use(doErrors(app)); //custom handler for internal errors
 }
 
 //TODO: set up route handlers
+
+function doFindLendings(app: Express.Application) {
+  return (async function (req: RequestWithQuery, res: Express.Response) {
+    try {
+      const q = { ...req.query };
+      const result = await app.locals.model.findLendings(q);
+      if (!result.isOk) throw result;
+      const response = selfResult(req, result.val, STATUS.OK);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
+
+function doReturnBook(app: Express.Application) {
+  return (async function (req: Express.Request, res: Express.Response) {
+    try {
+      const { isbn, patronId } = req.body;
+      const result = await app.locals.model.returnBook({ isbn, patronId });
+      if (!result.isOk) throw result;
+      const response = selfResult(req, result.val, STATUS.OK);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
+
+function doCheckoutBook(app: Express.Application) {
+  return (async function (req: Express.Request, res: Express.Response) {
+    try {
+      const { isbn, patronId } = req.body;
+      const result = await app.locals.model.checkoutBook({ isbn, patronId });
+      if (!result.isOk) throw result;
+      const response = selfResult(req, result.val, STATUS.OK);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
+
+function doClearBooks(app: Express.Application) {
+  return (async function (req: Express.Request, res: Express.Response) {
+    try {
+      const result = await app.locals.model.clear();
+      if (result && result.isOk === false) throw result;
+      const response = selfResult(req, {}, STATUS.OK);
+      res.json(response);
+    }
+    catch (err) {
+      const mapped = mapResultErrors(err);
+      res.status(mapped.status).json(mapped);
+    }
+  });
+}
 
 function doAddBook(app: Express.Application) {
   return (async function (req: Express.Request, res: Express.Response) {
@@ -298,7 +367,7 @@ const CORS_OPTIONS = {
   origin: true,
 
   //methods allowed for cross-origin requests
-  methods: ['GET', 'PUT',],
+  methods: ['GET', 'PUT', 'POST', 'DELETE'],
 
   //request headers allowed on cross-origin requests
   //used to allow JSON content
